@@ -14,6 +14,16 @@ export default function Marquee({ children, speed = 40, className = '' }: { chil
     let x = 0;
     let last = performance.now();
     let raf = 0;
+    let running = true;
+    const io = new IntersectionObserver(([e]) => {
+      const was = running;
+      running = e.isIntersecting;
+      if (running && !was) {
+        last = performance.now();
+        raf = requestAnimationFrame(tick);
+      }
+    });
+    io.observe(track);
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
@@ -22,10 +32,13 @@ export default function Marquee({ children, speed = 40, className = '' }: { chil
       const half = track.scrollWidth / 2;
       if (half > 0 && -x >= half) x += half;
       track.style.transform = `translate3d(${x}px,0,0)`;
-      raf = requestAnimationFrame(tick);
+      if (running) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      io.disconnect();
+    };
   }, [speed]);
 
   return (

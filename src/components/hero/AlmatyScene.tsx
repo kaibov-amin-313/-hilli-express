@@ -130,13 +130,18 @@ const terrainFrag = /* glsl */ `
     float f = abs(fract(v - 0.5) - 0.5) / max(d, 1e-4);
     return 1.0 - min(f / w, 1.0);
   }
+  float grid2(vec2 v, float w) {
+    vec2 d = fwidth(v);
+    vec2 f = abs(fract(v - 0.5) - 0.5) / max(d, vec2(1e-4));
+    return 1.0 - min(min(f.x, f.y) / w, 1.0);
+  }
 
   void main() {
     // Contours every 0.15 units (≈150 m), a heavier one every 5.
     float c = line(vH / 0.15, 1.0);
     float C = line(vH / 0.75, 1.4);
     // Survey grid every 2 km.
-    float g = max(line(vWorld.x / 2.0, 0.8), line(vWorld.z / 2.0, 0.8)) * 0.3;
+    float g = grid2(vWorld.xz / 2.0, 0.8) * 0.3;
     // Low sun from the west-north-west: ridges split into lit and shadowed faces.
     float diff = clamp(dot(normalize(vN), normalize(vec3(-0.7, 0.55, -0.35))), 0.0, 1.0);
     float rim = pow(1.0 - clamp(normalize(vN).y, 0.0, 1.0), 1.5);
@@ -174,7 +179,7 @@ const pointsVert = /* glsl */ `
     p.x += sin(uTime * 0.07 + aSeed * 6.28) * uDrift;
     p.y += sin(uTime * 0.2 + aSeed * 12.0) * uDrift * 0.15;
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
-    gl_PointSize = aSize * uPixel / -mv.z;
+    gl_PointSize = min(aSize * uPixel / -mv.z, 40.0);
     vAlpha = clamp(1.4 - (-mv.z) / 60.0, 0.0, 1.0);
     vSeed = aSeed;
     gl_Position = projectionMatrix * mv;
@@ -258,14 +263,18 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
 
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+      renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' });
     } catch {
       wrap.dataset.nowebgl = '1';
       return;
     }
     const mobile = window.innerWidth < 768;
     const reduced = prefersReducedMotion();
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobile ? 1.5 : 2));
+    // Resolution is the cost here: the terrain shader runs once per pixel. Start
+    // modest (contour lines are anti-aliased in the shader, so no MSAA either)
+    // and let the governor below step it down on slower GPUs.
+    let quality = Math.min(window.devicePixelRatio, mobile ? 1.25 : 1.5);
+    renderer.setPixelRatio(quality);
     renderer.setClearColor(0x000000, 0);
     wrap.insertBefore(renderer.domElement, wrap.firstChild);
     renderer.domElement.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block';
@@ -279,7 +288,7 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
     // Terrain
     const W = 80;
     const D = 64;
-    const seg = mobile ? [150, 120] : [260, 210];
+    const seg = mobile ? [100, 80] : [170, 136];
     const geo = new THREE.PlaneGeometry(W, D, seg[0], seg[1]);
     geo.rotateX(-Math.PI / 2);
     geo.translate(4, 0, 6);
@@ -304,7 +313,7 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
 
     // City lights
     const lights = makePoints(
-      mobile ? 3000 : 6500,
+      mobile ? 2200 : 4500,
       () => {
         const c = CLUSTERS[Math.floor(Math.random() * CLUSTERS.length)];
         if (Math.random() > c[3] / 1.4) return null;
@@ -334,7 +343,7 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
         smog.geometry.dispose();
         (smog.material as THREE.Material).dispose();
       }
-      const n = Math.round(Math.min(1, v / 150) * (mobile ? 2600 : 5200) + 300);
+      const n = Math.round(Math.min(1, v / 150) * (mobile ? 1200 : 2600) + 200);
       smog = makePoints(
         n,
         () => {
@@ -344,7 +353,7 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
           if (ground > 1.6) return null;
           return [x, ground + Math.pow(Math.random(), 2) * (0.6 + v / 120), z];
         },
-        mobile ? [0.25, 0.7] : [0.6, 1.8],
+        mobile ? [0.25, 0.6] : [0.45, 1.2],
         accent,
         { opacity: (mobile ? 0.6 : 1) * (0.05 + Math.min(0.1, v / 1500)), twinkle: 0, drift: 1.2, pixel },
       );
@@ -356,7 +365,7 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
     // Stations
     const stationGroup = new THREE.Group();
     scene.add(stationGroup);
-    const labels: { el: HTMLDivElement; pos: THREE.Vector3 }[] = [];
+    const labels: { el: HTMLDivElement; pos: THREE.Vector3; flip?: boolean; on?: boolean }[] = [];
     const rings: THREE.Mesh[] = [];
     const buildStations = () => {
       stationGroup.clear();
@@ -454,13 +463,45 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
 
     let raf = 0;
     const t0 = performance.now();
+    let targetHex = live.current.color;
+    const targetColor = new THREE.Color(targetHex);
+
+    // Frame-time governor: if frames run long for a couple of seconds, render
+    // at a lower resolution (down to 0.6×); if there is headroom, step back up.
+    let acc = 0;
+    let frames = 0;
+    let lastT = performance.now();
+    const govern = () => {
+      const now = performance.now();
+      const dt = now - lastT;
+      lastT = now;
+      if (dt > 250) return; // tab switch or a stall, not steady load
+      acc += dt;
+      frames++;
+      if (acc < 1500) return;
+      const avg = acc / frames;
+      acc = 0;
+      frames = 0;
+      const max = Math.min(window.devicePixelRatio, mobile ? 1.25 : 1.5);
+      let next = quality;
+      if (avg > 21) next = Math.max(0.6, quality * 0.8);
+      else if (avg < 13 && quality < max) next = Math.min(max, quality * 1.1);
+      if (Math.abs(next - quality) > 0.02) {
+        quality = next;
+        renderer.setPixelRatio(quality);
+        resize();
+      }
+    };
     const frame = () => {
       const t = reduced ? 8 : (performance.now() - t0) / 1000;
 
       // Live data changes
       const cur = live.current;
-      const newAccent = new THREE.Color(cur.color);
-      if (!newAccent.equals(accent)) accent.lerp(newAccent, 0.05);
+      if (cur.color !== targetHex) {
+        targetHex = cur.color;
+        targetColor.set(cur.color);
+      }
+      if (!accent.equals(targetColor)) accent.lerp(targetColor, 0.05);
       buildSmog(cur.pm);
       const key = cur.stations.map((s) => s.id + s.value + s.color).join('|');
       if (key !== stationKey) {
@@ -500,15 +541,23 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
         const sy = ((1 - proj.y) / 2) * h;
         // Near the right edge the callout flips to the beam's left side.
         const flip = sx > w - 260;
-        l.el.classList.toggle('is-flipped', flip);
-        l.el.style.opacity = onScreen ? '1' : '0';
+        if (l.flip !== flip) {
+          l.flip = flip;
+          l.el.classList.toggle('is-flipped', flip);
+        }
+        if (l.on !== onScreen) {
+          l.on = onScreen;
+          l.el.style.opacity = onScreen ? '1' : '0';
+        }
         l.el.style.transform = `translate3d(${sx}px, ${sy}px, 0)${flip ? ' translateX(-100%)' : ''}`;
       }
     };
     const loop = () => {
       cancelAnimationFrame(raf);
+      lastT = performance.now();
       const tick = () => {
         frame();
+        govern();
         if (visible && !reduced) raf = requestAnimationFrame(tick);
       };
       tick();

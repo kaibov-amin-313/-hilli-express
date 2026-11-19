@@ -25,8 +25,8 @@ let lenis: Lenis | null = null;
 export function startSmoothScroll(): Lenis | null {
   if (lenis || prefersReducedMotion()) return lenis;
   lenis = new Lenis({
-    duration: 1.15,
-    easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+    // Light smoothing: a long glide reads as input lag, not polish.
+    lerp: 0.16,
     // Inner scroll areas (the chat list) opt out with data-lenis-prevent.
     prevent: (node) => !!node.closest?.('[data-lenis-prevent]'),
   });
