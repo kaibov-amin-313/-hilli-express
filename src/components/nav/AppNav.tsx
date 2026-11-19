@@ -8,6 +8,7 @@
 //
 // Phone: a floating tab dock within thumb reach.
 
+import AuaLogo, { levelFromColor, useStatusFavicon } from '../brand/AuaLogo';
 import { useEffect, useState, type ComponentType } from 'react';
 import { useRoute, navigate } from '../../lib/router';
 import { DashboardIcon, ForecastIcon, MapIcon, NowIcon, StationsIcon } from './icons';
@@ -70,6 +71,7 @@ function useScrollState(): { scrolled: boolean; hidden: boolean } {
 }
 
 export default function AppNav({ statusColor, statusLabel }: AppNavProps) {
+  useStatusFavicon(levelFromColor(statusColor));
   const { path } = useRoute();
   const clock = useAlmatyClock();
   const { scrolled, hidden } = useScrollState();
@@ -97,11 +99,7 @@ export default function AppNav({ statusColor, statusLabel }: AppNavProps) {
             data-magnetic
             aria-label="AUA — на главную"
           >
-            <span className="font-display text-xl tracking-[-0.06em] leading-none">AUA</span>
-            <span
-              className="w-2 h-2 rounded-full transition-colors duration-700"
-              style={{ background: statusColor, boxShadow: `0 0 14px ${statusColor}` }}
-            />
+            <AuaLogo level={levelFromColor(statusColor)} height={22} />
           </button>
 
           <div className="flex items-center gap-1 lg:gap-2 mx-auto">

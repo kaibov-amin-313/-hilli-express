@@ -22,6 +22,7 @@ import AlmatyScene, { type SceneStation } from './AlmatyScene';
 import HudFrame from './HudFrame';
 import { aqiBand } from '../charts/primitives';
 import { STATUS_HEX } from '../lottie/Lottie';
+import AuaLogo from '../brand/AuaLogo';
 import SplitText from '../fx/SplitText';
 
 const HERO_TITLE: Record<StatusKey, [string, string]> = {
@@ -261,7 +262,7 @@ export default function Hero() {
         {/* Meta row */}
         <div data-hero-fade className="flex items-center justify-between gap-4 font-mono text-2xs uppercase tracking-[0.18em] text-white/60">
           <span className="flex items-center gap-3 min-w-0">
-            <span className="md:hidden font-display text-lg normal-case tracking-[-0.06em] text-white">AUA</span>
+            <AuaLogo level={key} height={18} className="md:hidden" />
             <span style={{ color: copy.cssVar }}>(01)</span>
             <span className="truncate">{place?.label ?? 'Алматы'}</span>
           </span>

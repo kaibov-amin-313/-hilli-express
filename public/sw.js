@@ -5,11 +5,11 @@
 // responses are NEVER cached — air quality data going stale would be worse
 // than showing a loading state, so those requests always go to the network.
 
-const CACHE = 'aua-shell-v1';
+const CACHE = 'aua-shell-v2';
 
 // Only same-origin static assets. Vite hashes its build output, so we cache
 // opportunistically at runtime rather than hardcoding filenames here.
-const PRECACHE = ['/', '/index.html', '/manifest.webmanifest', '/favicon.svg', '/icon-192.png', '/icon-512.png'];
+const PRECACHE = ['/', '/index.html', '/manifest.webmanifest', '/favicon.svg', '/favicon.ico', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
