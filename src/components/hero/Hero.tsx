@@ -1,417 +1,378 @@
-// The hero: liquid glass over a looping video, in the Bloom visual language.
+// The opening shot.
 //
-// Two deliberate departures from the reference spec, both because AUA is a
-// working instrument rather than a brochure:
+// The verdict is the headline, set huge, rising in letter by letter. Behind
+// it the night city on video, and over the video the air itself: a field of
+// particles whose density is the real PM2.5 at the chosen place, tinted with
+// the status colour. A clean evening is a few slow motes; a smog evening is a
+// haze you can see before you read a number.
 //
-//   · Colour. The spec calls for strict grayscale. Everything here obeys that
-//     except the verdict word, the mark's dot and the sparkline — because in
-//     this product green/amber/red *is* the answer, not decoration. Against an
-//     otherwise colourless hero the one coloured word carries more weight, not
-//     less.
-//   · The nav row shows the chosen district instead of repeating the logo. The
-//     app shell already renders a logo and a tab bar directly above this
-//     section; a second "aua" sixty pixels below the first reads as a bug.
-//
-// The right panel is filled with live readings rather than marketing cards, so
-// the first screen doubles as proof that the network is actually running.
+// Below the verdict, the numbers that back it up are laid out like an
+// instrument panel — mono labels, hairline rules, no cards — so the first
+// screen is both the poster and the proof the network is running.
 
-import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, ArrowUpRight, MapPin, Plus, Sparkles, Wind } from 'lucide-react';
-import { api, asKey, type MlForecast, type StatusKey } from '../../lib/api';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ArrowDown, ArrowUpRight } from 'lucide-react';
+import { api, aqiToPm, asKey, type MlForecast, type Station, type StatusKey } from '../../lib/api';
 import { statusCopyFor } from '../../lib/air';
 import { useApp } from '../../lib/appState';
 import { navigate } from '../../lib/router';
+import { gsap, prefersReducedMotion, scrollToTarget } from '../../lib/motion';
 import Sparkline from '../charts/Sparkline';
-import Mark from './Mark';
+import AlmatyScene, { type SceneStation } from './AlmatyScene';
+import HudFrame from './HudFrame';
+import { aqiBand } from '../charts/primitives';
+import { STATUS_HEX } from '../lottie/Lottie';
+import SplitText from '../fx/SplitText';
 
-// The headline is the verdict, split so the second half can take the serif
-// italic the way the reference does.
 const HERO_TITLE: Record<StatusKey, [string, string]> = {
   good: ['Можно', 'гулять'],
   mid: ['Недолго', 'на воздухе'],
   bad: ['Лучше', 'дома'],
 };
 
-function hhmm(d: Date): string {
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+function hhmm(iso: string): string {
+  return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** A number that counts to its new value instead of jumping. */
+function Counter({ value }: { value: number | null }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const shown = useRef({ v: 0 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (value == null) {
+      el.textContent = '—';
+      return;
+    }
+    if (prefersReducedMotion()) {
+      el.textContent = String(Math.round(value));
+      return;
+    }
+    const t = gsap.to(shown.current, {
+      v: value,
+      duration: 1.8,
+      ease: 'expo.out',
+      delay: 0.3,
+      onUpdate: () => {
+        el.textContent = String(Math.round(shown.current.v));
+      },
+    });
+    return () => {
+      t.kill();
+    };
+  }, [value]);
+  return <span ref={ref} className="tabular-nums">—</span>;
+}
+
+/** PM2.5 on the WHO scale, with a marker where we are now. */
+function WhoScale({ pm }: { pm: number | null }) {
+  const max = 100;
+  const pos = pm == null ? 0 : Math.min(pm / max, 1) * 100;
+  const stops = [
+    { at: 15, label: '15' },
+    { at: 35, label: '35' },
+    { at: 75, label: '75' },
+  ];
+  return (
+    <div className="w-full">
+      <div className="relative h-[3px] rounded-full overflow-visible"
+        style={{
+          background:
+            'linear-gradient(90deg, var(--good) 0%, var(--good) 15%, var(--mid) 15%, var(--mid) 35%, color-mix(in srgb, var(--bad) 70%, var(--mid)) 35%, color-mix(in srgb, var(--bad) 70%, var(--mid)) 75%, var(--bad) 75%)',
+          opacity: 0.9,
+        }}
+      >
+        {pm != null && (
+          <span
+            className="absolute -top-[7px] h-[17px] w-[2px] bg-white transition-[left] duration-1000"
+            style={{ left: `${pos}%`, boxShadow: '0 0 12px #fff' }}
+            aria-hidden="true"
+          />
+        )}
+      </div>
+      <div className="relative mt-2 h-4 font-mono text-[10px] text-muted">
+        <span className="absolute left-0">0</span>
+        {stops.map((s) => (
+          <span key={s.at} className="absolute -translate-x-1/2" style={{ left: `${s.at}%` }}>
+            {s.label}
+          </span>
+        ))}
+        <span className="absolute right-0">100+</span>
+      </div>
+    </div>
+  );
 }
 
 export default function Hero() {
   const { status, statusLoading, place, devices } = useApp();
   const [forecast, setForecast] = useState<MlForecast | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [introDone, setIntroDone] = useState(() => {
+    try {
+      return sessionStorage.getItem('aua.intro.v1') === '1' || prefersReducedMotion();
+    } catch {
+      return true;
+    }
+  });
+  const sectionRef = useRef<HTMLElement>(null);
+  const progress = useRef({ current: 0 }).current;
+  const [stations, setStations] = useState<Station[]>([]);
 
-  // The `autoplay` attribute is evaluated when the browser first sees the
-  // element; this component mounts after hydration, so on some engines the
-  // video ends up ready-but-paused and never starts on its own.
-  //
-  // Nudging it once on mount isn't enough either — at that moment the source
-  // may still be loading and play() rejects. So we also retry on `canplay`,
-  // and again when the tab is brought back to the foreground (browsers pause
-  // background video and don't always resume it). Every attempt swallows its
-  // rejection: a blocked play (autoplay policy, data saver) is not an error
-  // worth surfacing, and the scrim plus gradient still make a good backdrop.
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const tryPlay = () => void video.play().catch(() => {});
-    tryPlay();
-
-    video.addEventListener('canplay', tryPlay);
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') tryPlay();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-
+    let alive = true;
+    const load = () =>
+      void api
+        .stations()
+        .then((s) => alive && setStations(s))
+        .catch(() => {});
+    load();
+    const id = window.setInterval(load, 60_000);
     return () => {
-      video.removeEventListener('canplay', tryPlay);
-      document.removeEventListener('visibilitychange', onVisible);
+      alive = false;
+      window.clearInterval(id);
     };
   }, []);
+
+  useEffect(() => {
+    if (introDone) return;
+    const done = () => setIntroDone(true);
+    window.addEventListener('aua:intro-done', done);
+    return () => window.removeEventListener('aua:intro-done', done);
+  }, [introDone]);
 
   useEffect(() => {
     if (!place) return;
     let alive = true;
     void api
       .mlForecast(place, 6)
-      .then((f) => {
-        if (alive) setForecast(f);
-      })
-      .catch(() => {
-        // The hero must still render without a forecast; the panel hides it.
-      });
+      .then((f) => alive && setForecast(f))
+      .catch(() => {});
     return () => {
       alive = false;
     };
   }, [place]);
 
-  const key = status ? asKey(status.status) : 'good';
+  // Scroll choreography: the verdict drifts up and dissolves, the video pushes
+  // in, as if the camera is moving through the haze toward the details below.
+  useLayoutEffect(() => {
+    const el = sectionRef.current;
+    if (!el || prefersReducedMotion()) return;
+    const ctx = gsap.context(() => {
+      gsap.to('[data-hero-title]', {
+        yPercent: -35,
+        opacity: 0.1,
+        ease: 'none',
+        scrollTrigger: { trigger: el, start: 'top top', end: 'bottom top', scrub: true },
+      });
+      gsap.to(progress, {
+        current: 1,
+        ease: 'none',
+        scrollTrigger: { trigger: el, start: 'top top', end: 'bottom top', scrub: 0.6 },
+      });
+      gsap.from('[data-hero-fade]', {
+        opacity: 0,
+        y: 24,
+        duration: 1.2,
+        ease: 'expo.out',
+        stagger: 0.08,
+        delay: 0.5,
+      });
+    }, el);
+    return () => ctx.revert();
+  }, [introDone]);
+
+  const key: StatusKey = status ? asKey(status.status) : 'good';
   const copy = statusCopyFor(key);
   const [line1, line2] = HERO_TITLE[key];
   const ready = status != null;
 
   const pm25 = status?.fusion?.pm25 ?? status?.external.air_quality?.pm2_5 ?? null;
   const weather = status?.external.weather ?? null;
+  // Smog density: PM2.5 when the model answers, otherwise the network's own
+  // composite converted to a PM2.5 equivalent, so the scene still reflects the air.
+  const scenePm = pm25 ?? (status ? aqiToPm(status.local.aqi_composite) : null);
+  const sceneStations: SceneStation[] = stations.map((st) => ({
+    id: st.id,
+    name: st.name,
+    lat: st.lat,
+    lng: st.lng,
+    color: st.reading ? STATUS_HEX[aqiBand(st.reading.aqi_composite)] : '#8d96a2',
+    value: st.reading ? `AQI ${Math.round(st.reading.aqi_composite)}` : st.online ? 'на связи' : 'нет связи',
+    isDemo: st.is_demo,
+  }));
   const nearest = status?.local.nearest_post ?? null;
-  const forecastPoints = forecast?.points ?? [];
-  const forecastLast = forecastPoints[forecastPoints.length - 1] ?? null;
+  const points = forecast?.points ?? [];
+  const last = points[points.length - 1] ?? null;
+
+  const cells = [
+    {
+      label: 'Через 6 часов',
+      value: last ? String(last.aqi) : '—',
+      unit: 'AQI',
+      extra:
+        points.length > 1 ? (
+          <Sparkline values={points.map((p) => p.aqi)} color={copy.cssVar} width={88} height={22} />
+        ) : null,
+    },
+    {
+      label: 'Безопасно на улице',
+      value: status ? `~${status.max_safe_duration_min}` : '—',
+      unit: 'мин',
+    },
+    {
+      label: 'Ближайший пост',
+      value: nearest ? nearest.name : '—',
+      unit: nearest ? `${nearest.distance_km} км` : '',
+      small: true,
+    },
+    {
+      label: 'Погода',
+      value: weather ? `${Math.round(weather.temperature_c)}°` : '—',
+      unit: weather ? `${Math.round(weather.humidity)} % влажн.` : '',
+    },
+  ];
 
   return (
-    // 70vh of video before the first number was the wrong trade on a phone:
-    // the two readings a person opens this app for (PM2.5 now, and 6 hours out)
-    // lived in the desktop-only right panel, so a mobile visitor had to scroll
-    // past the hero and a whole panel to reach them. The hero is now 52vh on
-    // small screens and carries those two numbers itself.
-    //
-    // md:-mt-[92px] pulls the section up to the true top of the page at
-    // desktop widths, so the video (which fills the section) paints behind
-    // AppNav's transparent <header> instead of leaving 92px of plain dark
-    // background above it (84px the sticky header reserves in flow, plus
-    // <main>'s own 8px top padding — measured).
-    //
-    // That first attempt pulled the *content* up along with the video: the
-    // left panel's glass card started at the section's new top edge too, so
-    // its rounded border landed right under the nav pill instead of below
-    // it. Fix: grow the section's min-height by the same 92px it moved up
-    // (so its bottom edge — and everything on the page after it — stays
-    // exactly where it was), and give the content row `md:pt-[92px]` to sit
-    // back down at its original spot inside that taller box. Only the video
-    // and its scrim layers, which are `absolute inset-0` and fill the whole
-    // section, actually reach up under the nav.
-    <section className="relative full-bleed md:-mt-[92px] min-h-[56vh] md:min-h-[calc(70vh+92px)] lg:min-h-[calc(100vh-5rem+92px)] overflow-hidden">
-      {/* Video sits at z-0, everything else floats above it. */}
-      {/* WebM first: VP9 is ~25% smaller than the H.264 at the same quality, and
-          browsers pick the first source they can decode. The MP4 is the fallback
-          for Safari. The source was 4K AV1, which Safari before 17 cannot play at
-          all — hence the transcode rather than shipping the original.
-
-          `poster` paints the first frame instantly so the hero is never a black
-          rectangle while 1.8MB streams in; the scrim and glass sit on top of it
-          exactly as they do on the video, so the transition is invisible. */}
-      <video
-        ref={videoRef}
-        className="absolute inset-0 z-0 h-full w-full object-cover"
-        poster="/hero-poster.jpg"
-        autoPlay
-        loop
-        muted
-        playsInline
-        aria-hidden="true"
-      >
-        <source src="/hero.webm" type="video/webm" />
-        <source src="/hero.mp4" type="video/mp4" />
-      </video>
-      {/* The clip averages 6% luminance but the text column's 95th percentile
-          reaches 0.72 — a dark scene with bright highlights — so a fixed scrim
-          keeps the headline legible on the brightest frame instead of letting
-          contrast swing with the footage.
-          Raised from 45% to 58%: at 45% the small captions over the video
-          measured about 3:1 on the brightest frames, under the 4.5:1 floor for
-          body text. The extra 13% costs a little of the footage and buys the
-          whole hero a legible floor regardless of which frame is showing. */}
-      <div className="absolute inset-0 z-0 bg-black/[0.58]" aria-hidden="true" />
-      {/* A second, directional wash under the text column only. The scrim alone
-          has to serve the whole frame; this lets the left third go darker
-          without flattening the right side of the video. */}
-      <div
+    <section
+      ref={sectionRef}
+      className="relative full-bleed md:-mt-20 min-h-[100svh] overflow-hidden flex flex-col"
+      aria-label="Оценка воздуха сейчас"
+    >
+      {/* ── 3D scene + HUD ──────────────────────────────────────── */}
+      <AlmatyScene
+        stations={sceneStations}
+        pm={scenePm}
+        color={STATUS_HEX[key]}
+        progress={progress}
         className="absolute inset-0 z-0"
+      />
+      <div
+        className="absolute inset-0 z-0 pointer-events-none"
         style={{
           background:
-            'linear-gradient(100deg, rgba(7,9,12,0.72) 0%, rgba(7,9,12,0.45) 45%, rgba(7,9,12,0) 72%)',
+            'linear-gradient(90deg, rgba(5,6,8,0.88) 0%, rgba(5,6,8,0.5) 32%, rgba(5,6,8,0) 58%), radial-gradient(40% 35% at 92% 78%, rgba(5,6,8,0.75), transparent 70%), linear-gradient(180deg, rgba(5,6,8,0.6) 0%, transparent 20%, transparent 66%, var(--bg) 100%)',
         }}
         aria-hidden="true"
       />
-      <div
-        className="absolute inset-x-0 bottom-0 z-0 h-32"
-        style={{ background: 'linear-gradient(180deg, transparent, var(--bg))' }}
-        aria-hidden="true"
-      />
+      <HudFrame />
 
-      <div className="relative z-10 flex min-h-[56vh] md:min-h-[calc(70vh+92px)] md:pt-[92px] lg:min-h-[calc(100vh-5rem+92px)]">
-        {/* ── Left panel ─────────────────────────────────────────────── */}
-        <div className="relative w-full lg:w-[52%]">
-          <div className="absolute inset-4 lg:inset-6 rounded-3xl hero-glass-strong" />
+      {/* ── Content ───────────────────────────────────────────────── */}
+      <div className="relative z-10 flex-1 flex flex-col w-full max-w-[1500px] mx-auto px-5 sm:px-6 lg:px-10 pt-8 md:pt-32 pb-8">
+        {/* Meta row */}
+        <div data-hero-fade className="flex items-center justify-between gap-4 font-mono text-2xs uppercase tracking-[0.18em] text-white/60">
+          <span className="flex items-center gap-3 min-w-0">
+            <span className="md:hidden font-display text-lg normal-case tracking-[-0.06em] text-white">AUA</span>
+            <span style={{ color: copy.cssVar }}>(01)</span>
+            <span className="truncate">{place?.label ?? 'Алматы'}</span>
+          </span>
+          <span className="flex items-center gap-2.5 shrink-0">
+            <span className="live-dot" style={{ width: 6, height: 6 }} />
+            {status ? `Обновлено ${hhmm(status.ts)}` : statusLoading ? 'Считаем…' : 'Нет данных'}
+          </span>
+        </div>
 
-          <div className="relative z-10 flex h-full flex-col px-8 py-7 lg:px-12 lg:py-12">
-            {/* Context row — which place this verdict is about. */}
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2.5 min-w-0">
-                <Mark size={26} className="text-white shrink-0" accent={copy.cssVar} />
-                <span className="font-display text-md tracking-tight text-white truncate">
-                  {place?.label ?? 'Алматы'}
-                </span>
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  document.getElementById('place-picker')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }}
-                className="hero-glass tap-target cursor-pointer shrink-0 rounded-full px-4 py-2 font-display text-xs text-white/85 transition-transform hover:scale-105"
-              >
-                Сменить
-              </button>
-            </div>
+        {/* Verdict */}
+        <div data-hero-title className="flex-1 flex flex-col justify-center py-10 md:py-8">
+          <p data-hero-fade className="font-mono text-xs uppercase tracking-[0.2em] text-white/60 mb-5 md:mb-7">
+            Можно ли сейчас гулять с ребёнком?
+          </p>
+          <h1 className="fs-display uppercase" aria-live="polite">
+            {introDone && (
+              <>
+                <SplitText text={ready ? line1 : 'Проверяем'} className="block text-white" delay={0.1} />
+                <SplitText
+                  text={ready ? line2 : 'воздух'}
+                  className="block"
+                  style={{ color: ready ? copy.cssVar : 'rgba(255,255,255,0.45)' }}
+                  delay={0.35}
+                />
+              </>
+            )}
+          </h1>
+        </div>
 
-            {/* Centre stack */}
-            {/* Tighter on phones so the section below stays visible under the
-                fold — the peek is what tells someone there is more to scroll. */}
-            <div className="flex flex-1 flex-col items-start justify-center py-5 md:py-7 lg:py-10">
-              {/* 72px is a desktop size; on a 390px screen it costs a quarter
-                  of the fold for a decorative glyph that already appears in the
-                  context row above. */}
-              <Mark size={48} className="mb-4 text-white lg:hidden" accent={copy.cssVar} />
-              <Mark size={72} className="mb-7 text-white hidden lg:block" accent={copy.cssVar} />
-
-              <h1 className="fs-display font-display font-medium text-white">
-                {ready ? line1 : 'Проверяем'}
-                <br />
-                <em
-                  className="font-serif italic"
-                  style={{ color: ready ? copy.cssVar : 'rgba(255,255,255,0.8)' }}
-                >
-                  {ready ? line2 : 'воздух'}
-                </em>
-              </h1>
-
-              <p className="mt-5 max-w-md font-display text-base leading-relaxed text-white/75">
-                {ready
-                  ? copy.sub
-                  : statusLoading
-                    ? 'Считаем оценку по вашему району…'
-                    : 'Выберите район или введите адрес ниже.'}
-              </p>
-
+        {/* Lower deck: what it means + the reading itself */}
+        <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
+          <div data-hero-fade className="max-w-xl">
+            <p className="text-md md:text-lg leading-relaxed text-white/80">
+              {ready ? copy.sub : statusLoading ? 'Считаем оценку по вашему району…' : 'Выберите район или введите адрес ниже.'}
+            </p>
+            <div className="mt-7 flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={() => navigate('/map')}
-                className="hero-glass-strong mt-8 flex items-center gap-3 rounded-full py-2 pl-6 pr-2 font-display text-md text-white transition-transform hover:scale-105 active:scale-95"
+                data-magnetic
+                data-cursor="Карта"
+                className="group flex items-center gap-3 rounded-full bg-white py-2 pl-6 pr-2 text-md font-medium text-black"
               >
                 Смотреть карту
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-fill-active">
-                  <ArrowUpRight size={15} />
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black text-white transition-transform duration-500 group-hover:rotate-45">
+                  <ArrowUpRight size={16} />
                 </span>
               </button>
-
-              {/* Phone-only: the same two readings the desktop right panel
-                  shows, so the answer is above the fold on every screen size.
-                  `hero-glass-inner` rather than `hero-glass` — this sits inside
-                  the already-blurred strong panel, and a nested backdrop-filter
-                  would be a second compositing pass for no visual gain. */}
-              <div className="mt-6 grid w-full grid-cols-2 gap-2.5 lg:hidden">
-                <div className="hero-glass-inner rounded-2xl px-4 py-3">
-                  <p className="font-display text-2xs uppercase tracking-widest text-white/70">
-                    PM2.5 сейчас
-                  </p>
-                  <p
-                    className="font-display text-xl leading-tight tracking-tight"
-                    style={{ color: pm25 == null ? '#fff' : copy.cssVar }}
-                  >
-                    {pm25 == null ? '—' : Math.round(pm25)}
-                    <span className="ml-1 text-xs text-white/70">µg/m³</span>
-                  </p>
-                </div>
-                <div className="hero-glass-inner rounded-2xl px-4 py-3">
-                  <p className="font-display text-2xs uppercase tracking-widest text-white/70">
-                    Через 6 часов
-                  </p>
-                  <p className="font-display text-xl leading-tight tracking-tight text-white">
-                    {forecastLast ? forecastLast.aqi : '—'}
-                    <span className="ml-1 text-xs text-white/70">AQI</span>
-                  </p>
-                </div>
-              </div>
-
-              {/* Desktop only. These three describe the network, which is a
-                  reason to trust the number — not the number itself. On a phone
-                  they were pushing the live readings below the fold, which
-                  inverts the whole point of the screen. */}
-              <div className="mt-5 hidden flex-wrap gap-2 lg:flex">
-                {[
-                  `${devices.length || '—'} станций`,
-                  'Прогноз 6 часов',
-                  '8 районов',
-                ].map((label) => (
-                  <span
-                    key={label}
-                    className="hero-glass rounded-full px-4 py-1.5 font-display text-xs text-white/85"
-                  >
-                    {label}
-                  </span>
-                ))}
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById('place-picker');
+                  if (el) scrollToTarget(el);
+                }}
+                data-magnetic
+                className="rounded-full border border-white/25 px-6 py-3 text-md text-white hover:border-white transition-colors"
+              >
+                Сменить район
+              </button>
             </div>
+          </div>
 
-            {/* Provenance block — the reference puts a quote here; ours states
-                where the number came from, which is the same gesture of
-                authorship applied to data. Editorial rather than operational,
-                so it yields the fold to the readings on small screens; /about
-                covers the same ground at length. */}
-            <div className="hidden lg:block">
-              <p className="font-display text-xs uppercase tracking-widest text-white/70">
-                Откуда оценка
+          <div data-hero-fade className="lg:text-right lg:min-w-[380px]">
+            <p className="font-mono text-2xs uppercase tracking-[0.2em] text-white/60">
+              PM2.5 сейчас · µg/m³
+            </p>
+            <p
+              className="font-display leading-[0.85] tracking-[-0.06em] my-2"
+              style={{
+                fontSize: pm25 == null ? 'clamp(56px, 6vw, 96px)' : 'clamp(84px, 11vw, 190px)',
+                color: pm25 == null ? 'rgba(255,255,255,0.3)' : copy.cssVar,
+              }}
+            >
+              <Counter value={pm25} />
+            </p>
+            <div className="lg:ml-auto lg:max-w-[380px]">
+              <WhoScale pm={pm25} />
+              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/50">
+                пороги ВОЗ · {devices.length || '—'} станций в сети
               </p>
-              <p className="mt-2.5 max-w-sm text-lg leading-snug text-white/85">
-                <span className="font-display">Городской фон </span>
-                <span className="font-serif italic">плюс поправки</span>
-                <span className="font-display"> наших станций.</span>
-              </p>
-              <div className="mt-4 flex items-center gap-3">
-                <span className="h-px w-8 bg-line-strong" />
-                <span className="font-display text-2xs uppercase tracking-widest text-white/70">
-                  AUA · Алматы
-                </span>
-                <span className="h-px flex-1 bg-line-strong" />
-              </div>
             </div>
           </div>
         </div>
 
-        {/* ── Right panel (desktop only) ─────────────────────────────── */}
-        <div className="hidden w-[48%] flex-col gap-4 py-6 pr-6 lg:flex">
-          <div className="flex items-center justify-end gap-2.5">
-            <span className="hero-glass flex items-center gap-3 rounded-full py-2 pl-5 pr-2 font-display text-xs text-white/85">
-              Обновлено {status ? hhmm(new Date(status.ts)) : '—'}
-              <button
-                type="button"
-                onClick={() => navigate('/dashboard')}
-                aria-label="Открыть дэшборд"
-                className="tap-target cursor-pointer flex h-7 w-7 items-center justify-center rounded-full bg-fill-active text-white transition-transform hover:scale-105"
-              >
-                <ArrowRight size={14} />
-              </button>
-            </span>
-            <button
-              type="button"
-              onClick={() => navigate('/forecast')}
-              aria-label="Открыть прогноз"
-              className="hero-glass tap-target cursor-pointer flex h-10 w-10 items-center justify-center rounded-full text-white transition-transform hover:scale-105"
+        {/* Instrument strip */}
+        <dl
+          data-hero-fade
+          className="mt-10 grid grid-cols-2 lg:grid-cols-4 border-t border-white/15"
+        >
+          {cells.map((c, i) => (
+            <div
+              key={c.label}
+              className={`py-4 pr-4 border-white/15 ${i % 2 === 1 ? 'pl-4 border-l border-white/15' : ''} ${
+                i >= 2 ? 'border-t border-white/15 lg:border-t-0' : ''
+              } ${i === 2 ? 'lg:pl-4 lg:border-l' : ''}`}
             >
-              <Sparkles size={16} />
-            </button>
-          </div>
-
-          <div className="hero-glass ml-auto w-56 rounded-3xl p-5">
-            <p className="font-display text-base font-medium text-white">Ближайший пост</p>
-            <p className="mt-1.5 font-display text-xs leading-relaxed text-white/75">
-              {nearest
-                ? `${nearest.name} — ${nearest.distance_km} км. ${
-                    status?.local.based_on === 'measurement' ? 'Прямое измерение.' : 'Оценка интерполирована.'
-                  }`
-                : 'Определяем ближайшую станцию сети.'}
-            </p>
-          </div>
-
-          {/* Feature block, pinned to the bottom like the reference. */}
-          {/* Was hero-glass inside hero-glass inside hero-glass over a playing
-              video — three backdrop-filter passes stacked on the same pixels.
-              The outer surface keeps the blur; the tiles inside it use the
-              non-blurring inner tier. */}
-          <div className="hero-glass mt-auto rounded-3xl p-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="hero-glass-inner rounded-3xl p-5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-fill-active text-white">
-                  <Wind size={15} />
+              <dt className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/55">{c.label}</dt>
+              <dd className="mt-2 flex items-end gap-2 flex-wrap">
+                <span className={`font-display tracking-[-0.04em] leading-none ${c.small ? 'text-md md:text-lg' : 'text-xl md:text-2xl'}`}>
+                  {c.value}
                 </span>
-                <p className="mt-3.5 font-display text-sm text-white/75">PM2.5 сейчас</p>
-                <p
-                  className="font-display text-2xl leading-tight tracking-tight"
-                  style={{ color: pm25 == null ? '#fff' : copy.cssVar }}
-                >
-                  {pm25 == null ? '—' : Math.round(pm25)}
-                  <span className="ml-1 text-sm text-white/70">µg/m³</span>
-                </p>
-                <p className="font-display text-xs text-white/70">
-                  {weather ? `${Math.round(weather.temperature_c)} °C · ${Math.round(weather.humidity)} %` : 'норма ВОЗ — 15'}
-                </p>
-              </div>
-
-              <div className="hero-glass-inner rounded-3xl p-5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-fill-active text-white">
-                  <MapPin size={15} />
-                </span>
-                <p className="mt-3.5 font-display text-sm text-white/75">Через 6 часов</p>
-                <p className="font-display text-2xl leading-tight tracking-tight text-white">
-                  {forecastLast ? forecastLast.aqi : '—'}
-                  <span className="ml-1 text-sm text-white/70">AQI</span>
-                </p>
-                {forecastPoints.length > 1 ? (
-                  <div className="mt-1 -ml-1">
-                    <Sparkline
-                      values={forecastPoints.map((p) => p.aqi)}
-                      color={copy.cssVar}
-                      width={96}
-                      height={22}
-                    />
-                  </div>
-                ) : (
-                  <p className="font-display text-xs text-white/70">модель обучается</p>
-                )}
-              </div>
+                {c.unit && <span className="font-mono text-2xs text-white/55 mb-0.5">{c.unit}</span>}
+                {c.extra && <span className="ml-auto self-center">{c.extra}</span>}
+              </dd>
             </div>
+          ))}
+        </dl>
 
-            <div className="hero-glass-inner mt-3 flex items-center gap-4 rounded-3xl p-3">
-              <span className="flex h-16 w-24 shrink-0 items-center justify-center rounded-2xl bg-fill-hover">
-                <Mark size={40} className="text-white" accent={copy.cssVar} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="font-display text-base font-medium text-white">
-                  Безопасно ~{status?.max_safe_duration_min ?? '—'} мин
-                </p>
-                <p className="mt-0.5 font-display text-xs leading-relaxed text-white/75">
-                  Длительность считается под выбранный профиль.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => navigate('/stations')}
-                aria-label="Открыть станции"
-                className="hero-glass-inner tap-target cursor-pointer flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white transition-transform hover:scale-105"
-              >
-                <Plus size={16} />
-              </button>
-            </div>
-          </div>
+        <div data-hero-fade className="hidden md:flex mt-6 items-center gap-3 font-mono text-[10px] uppercase tracking-[0.2em] text-white/45">
+          <ArrowDown size={12} className="animate-bounce" />
+          Листайте — откуда оценка и что делать
         </div>
       </div>
     </section>

@@ -4,11 +4,13 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
-        // Hero only. `display` is the headline/body pair, `serif` is reserved
-        // for the italic accent inside headings — never for body copy.
-        display: ['Poppins', 'Inter', 'sans-serif'],
-        serif: ['"Source Serif 4"', 'Georgia', 'serif'],
+        sans: ['"Inter Variable"', 'Inter', 'system-ui', 'sans-serif'],
+        // Display: wide, geometric, full Cyrillic. Headlines, big numbers,
+        // the curtain between screens — never body copy.
+        display: ['"Unbounded Variable"', 'Unbounded', 'sans-serif'],
+        // Data labels, coordinates, eyebrows: the instrument's voice.
+        mono: ['"JetBrains Mono Variable"', 'ui-monospace', 'monospace'],
+        serif: ['"Unbounded Variable"', 'sans-serif'],
       },
 
       // ── Type scale ───────────────────────────────────────────────────────
@@ -29,6 +31,7 @@ export default {
         xl: ['22px', { lineHeight: '1.25' }],      // secondary numbers
         '2xl': ['26px', { lineHeight: '1.12' }],   // KPI numbers
         '3xl': ['34px', { lineHeight: '1.08' }],   // page numbers
+        '4xl': ['48px', { lineHeight: '1' }],
       },
 
       // ── Radius scale ─────────────────────────────────────────────────────

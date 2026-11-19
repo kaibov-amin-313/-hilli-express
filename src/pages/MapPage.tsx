@@ -126,6 +126,7 @@ export default function MapPage() {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 18,
+      className: 'base-tiles',
     }).addTo(map);
 
     return () => {

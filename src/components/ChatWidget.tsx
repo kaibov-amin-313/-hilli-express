@@ -58,13 +58,13 @@ export default function ChatWidget({ place }: ChatWidgetProps) {
   // bar (AppNav) occupies the bottom ~60px there and nothing does on desktop —
   // and inline styles always beat a class regardless of breakpoint, so it has
   // to live in className instead or the responsive override could never win.
-  const anchor: CSSProperties = { position: 'fixed', right: 20, zIndex: 9000 };
+  const anchor: CSSProperties = { position: 'fixed', right: 20, zIndex: 2400 };
   // Match the tab bar's own content height (~61px) plus a gap, and add the same
   // safe-area inset the tab bar pads itself with — so the button clears it on
   // every device, notch or not, without the two having to coordinate.
-  const BUTTON_BOTTOM_MOBILE = 'bottom-[calc(76px+env(safe-area-inset-bottom,0px))]';
+  const BUTTON_BOTTOM_MOBILE = 'bottom-[calc(90px+env(safe-area-inset-bottom,0px))]';
   // Stacked above the button: its own mobile offset + button height + a gap.
-  const PANEL_BOTTOM_MOBILE = 'bottom-[calc(140px+env(safe-area-inset-bottom,0px))]';
+  const PANEL_BOTTOM_MOBILE = 'bottom-[calc(154px+env(safe-area-inset-bottom,0px))]';
 
   return (
     <>
@@ -100,7 +100,7 @@ export default function ChatWidget({ place }: ChatWidgetProps) {
             </div>
           </div>
 
-          <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-4 grid gap-3 content-start">
+          <div ref={listRef} data-lenis-prevent className="flex-1 overflow-y-auto px-4 py-4 grid gap-3 content-start">
             {messages.map((m, i) => (
               <div
                 key={i}

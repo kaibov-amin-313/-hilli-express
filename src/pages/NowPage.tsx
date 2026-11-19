@@ -12,7 +12,8 @@ import { navigate } from '../lib/router';
 import Hero from '../components/hero/Hero';
 import PlacePicker from '../components/PlacePicker';
 import BringList from '../components/BringList';
-import { Chip, EmptyState, Panel, Skeleton, StatTile } from '../components/ui/Panel';
+import { Chip, EmptyState, Panel, SectionHead, Skeleton, StatTile } from '../components/ui/Panel';
+import Marquee from '../components/fx/Marquee';
 import Gauge from '../components/charts/Gauge';
 import { pmBand, pmColorVar } from '../components/charts/primitives';
 import { BandMark } from '../components/ui/Band';
@@ -76,6 +77,34 @@ export default function NowPage() {
     <div className="flex flex-col gap-4">
       <Hero />
 
+      {/* Live ticker — the readings, scrolling past like a station board. */}
+      <div className="full-bleed -mt-4 border-y border-line-soft bg-black/30">
+        <Marquee speed={55} className="py-3.5">
+          {[
+            ['PM2.5', pm25 == null ? '—' : `${Math.round(pm25)} µg/m³`],
+            ['Статус', copy.idx],
+            ['Безопасно', status ? `~${status.max_safe_duration_min} мин` : '—'],
+            ['Температура', weather ? `${Math.round(weather.temperature_c)} °C` : '—'],
+            ['Ветер', weather ? `${weather.wind_speed_ms.toFixed(1)} м/с` : '—'],
+            ['Уверенность', status ? `${Math.round(status.confidence * 100)} %` : '—'],
+            ['Ближайший пост', status?.local.nearest_post?.name ?? '—'],
+          ].map(([k, v]) => (
+            <span key={k} className="flex items-center gap-3 px-6 font-mono text-xs uppercase tracking-[0.14em]">
+              <span className="text-muted">{k}</span>
+              <span className="text-white">{v}</span>
+              <span className="ml-6 h-1.5 w-1.5 rotate-45" style={{ background: 'var(--status-c)' }} />
+            </span>
+          ))}
+        </Marquee>
+      </div>
+
+      <SectionHead
+        index="02"
+        icon="target"
+        title="Детали оценки"
+        note="Выберите район или адрес — оценка, советы и окно прогулки пересчитаются под него."
+      />
+
       <div id="place-picker" className="scroll-mt-24">
         <PlacePicker />
       </div>
@@ -113,6 +142,7 @@ export default function NowPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatTile
           label="PM2.5"
+          icon="gauge"
           value={pm25 == null ? '—' : Math.round(pm25)}
           unit="µg/m³"
           color={pm25 == null ? undefined : pmColorVar(pm25)}
@@ -120,18 +150,21 @@ export default function NowPage() {
         />
         <StatTile
           label="Температура"
+          icon="pulse"
           value={weather ? Math.round(weather.temperature_c) : '—'}
           unit="°C"
           hint={weather ? `ощущается ${Math.round(weather.apparent_c)} °C` : undefined}
         />
         <StatTile
           label="Влажность"
+          icon="wind"
           value={weather ? Math.round(weather.humidity) : '—'}
           unit="%"
           hint={weather ? `ветер ${weather.wind_speed_ms.toFixed(1)} м/с` : undefined}
         />
         <StatTile
           label="УФ-индекс"
+          icon="scan"
           value={weather ? Math.round(weather.uv_index) : '—'}
           hint={
             status?.external.pollen
@@ -140,6 +173,8 @@ export default function NowPage() {
           }
         />
       </div>
+
+      <SectionHead index="03" icon="lungs" title="Что делать" note="Список вещей, лучшее окно для прогулки и что происходит в городе рядом с вами." />
 
       <div className="grid lg:grid-cols-2 gap-4">
         {/* What to bring */}
@@ -223,6 +258,8 @@ export default function NowPage() {
         </div>
       </div>
 
+      <SectionHead index="04" icon="radar" title="Советы и места" note="Рекомендации считаются на сервере под выбранный профиль — ребёнок, астма, спорт." />
+
       {/* Recommendations */}
       <Panel title="Рекомендации" sub="Пересчитываются под выбранный профиль на сервере.">
         {status ? (
@@ -297,7 +334,9 @@ export default function NowPage() {
 
       {/* Transparency */}
       {status && status.local.contributing_posts.length > 0 && (
-        <Panel title="Откуда взялась оценка" sub="Вклад каждого поста в цифру выше.">
+        <>
+        <SectionHead index="05" icon="signal" title="Откуда цифра" note="Каждая оценка прозрачна: вот вклад каждой станции сети в число на первом экране." />
+        <Panel title="Вклад станций" sub="Чем ближе пост, тем больше его вес.">
           <ul className="flex flex-col gap-2">
             {status.local.contributing_posts.map((c) => (
               <li key={c.device_id} className="flex items-center gap-3 text-sm">
@@ -318,6 +357,7 @@ export default function NowPage() {
             ))}
           </ul>
         </Panel>
+        </>
       )}
 
       <p className="text-xs text-muted leading-relaxed px-1">
