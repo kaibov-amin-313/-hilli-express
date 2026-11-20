@@ -34,7 +34,7 @@ const char* LOCATION   = "Auezov mkr-12";
 // true = станция подключена к ноутбуку по USB и работает без Wi-Fi и MQTT.
 // Бэкенд на ноутбуке читает пакеты прямо из порта (MQ135_SERIAL_PORT в backend/.env).
 // Для защиты, где нет интернета, ставь true. Для работы через интернет — false.
-const bool USB_ONLY = false;
+const bool USB_ONLY = true;
 
 const unsigned long PUBLISH_EVERY_MS = 15000;   // бэкенд считает станцию офлайн после 15 минут тишины
 const unsigned long WARMUP_MS        = 120000;  // MQ-135 нужно прогреться; первые 2 минуты помечаем
