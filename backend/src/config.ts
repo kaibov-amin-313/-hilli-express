@@ -39,6 +39,10 @@ export const config = {
   mqttBrokerUrl: env('MQTT_BROKER_URL', 'mqtt://broker.hivemq.com:1883'),
   mqttClientId: env('MQTT_CLIENT_ID', 'aua-backend-mq135'),
   mq135Topic: env('MQ135_TOPIC', 'almaty/auezov/mkr12/station1/air'),
+  // Offline mode: read the station straight from its USB serial port
+  // (e.g. /dev/cu.usbserial-110 on a Mac). Empty = off.
+  mq135SerialPort: env('MQ135_SERIAL_PORT', ''),
+  mq135SerialBaud: num('MQ135_SERIAL_BAUD', 115200),
   // The physically built station. Its MQTT payload carries no coordinates, so
   // where it hangs is configuration rather than data — without this it could
   // not be placed on the map or take part in the spatial interpolation.

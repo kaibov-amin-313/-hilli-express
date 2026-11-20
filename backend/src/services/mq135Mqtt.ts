@@ -40,14 +40,7 @@ export function startMq135MqttSubscriber(log?: Logger): MqttClient | null {
 
   client.on('message', (topic, payload) => {
     if (topic !== config.mq135Topic) return;
-    try {
-      const reading = parseMq135Message(topic, payload);
-      const id = insertMq135AirReading(reading);
-      ingestAsDevice(reading, log);
-      log?.info({ id, topic, location: reading.location }, 'MQ-135 air reading saved');
-    } catch (err) {
-      log?.warn({ err, topic, payload: payload.toString('utf8').slice(0, 300) }, 'MQ-135 MQTT message rejected');
-    }
+    acceptMq135Payload(topic, payload, log);
   });
 
   client.on('error', (err) => {
@@ -136,6 +129,24 @@ function parseMq135Message(topic: string, payload: Buffer): Mq135AirReading {
     quality_percent: round(qualityPercent, 2),
     status,
   };
+}
+
+/**
+ * One entry point for a station packet, whatever carried it: MQTT, or the USB
+ * serial line when the station is plugged straight into the laptop.
+ * Returns true when the packet was stored.
+ */
+export function acceptMq135Payload(source: string, payload: Buffer, log?: Logger): boolean {
+  try {
+    const reading = parseMq135Message(source, payload);
+    const id = insertMq135AirReading(reading);
+    ingestAsDevice(reading, log);
+    log?.info({ id, source, location: reading.location }, 'MQ-135 air reading saved');
+    return true;
+  } catch (err) {
+    log?.warn({ err, source, payload: payload.toString('utf8').slice(0, 300) }, 'MQ-135 packet rejected');
+    return false;
+  }
 }
 
 function requireFiniteNumber(v: unknown, name: string): number {

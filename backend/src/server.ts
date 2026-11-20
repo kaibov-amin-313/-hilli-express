@@ -15,6 +15,7 @@ import { startTrafficPoller } from './external/tomtom.js';
 import { loadSecretsFromEnv } from './auth/hmac.js';
 import { scanAllDevices } from './services/anomalyScan.js';
 import { startMq135MqttSubscriber, stopMq135MqttSubscriber } from './services/mq135Mqtt.js';
+import { startMq135SerialReader, stopMq135SerialReader } from './services/mq135Serial.js';
 import { startReferenceCollector, stopReferenceCollector } from './services/referenceCollector.js';
 
 import { statusRoutes } from './routes/status.js';
@@ -96,6 +97,7 @@ async function bootstrap(): Promise<void> {
 
   startTrafficPoller(app.log);
   startMq135MqttSubscriber(app.log);
+  startMq135SerialReader(app.log);
   startReferenceCollector(app.log);
 
   if (config.useMock) {
@@ -127,6 +129,7 @@ async function bootstrap(): Promise<void> {
     clearInterval(scanInterval);
     clearInterval(retrainInterval);
     stopReferenceCollector();
+    stopMq135SerialReader();
     await stopMq135MqttSubscriber();
     await app.close();
     closeDb();
