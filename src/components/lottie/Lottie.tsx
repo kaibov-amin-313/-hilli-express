@@ -107,6 +107,10 @@ export default function Lottie({
           rendererSettings: { preserveAspectRatio },
         });
         anim.setSpeed(speed);
+        // The files are authored at 60 fps. Without this, lottie interpolates a
+        // new SVG frame on every display refresh — 120 a second on a ProMotion
+        // MacBook, for each icon on screen.
+        anim.setSubframe(false);
         if (prefersReducedMotion()) {
           anim.goToAndStop(stillFrame, true);
           return;

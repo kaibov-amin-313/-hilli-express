@@ -116,21 +116,28 @@ textarea:focus-visible {
   transition: border-color 0.5s var(--ease-out-expo);
 }
 .liquid-glass::before {
+  /* The same 420px light as before, but drawn once into an 840px disc that
+     the GPU slides under the pointer — moving a gradient's centre repainted
+     the whole panel on every mouse move. The panel's overflow clips it. */
   content: '';
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
+  left: 0;
+  top: 0;
+  width: 840px;
+  height: 840px;
+  margin: -420px 0 0 -420px;
   pointer-events: none;
   background: radial-gradient(
-    420px circle at var(--mx, 50%) var(--my, -200px),
+    420px circle at 50% 50%,
     color-mix(in srgb, var(--status-c) 11%, transparent),
     transparent 65%
   );
+  transform: translate3d(var(--mx, 50%), var(--my, -200px), 0);
   opacity: 0;
   transition: opacity 0.5s ease;
 }
 .liquid-glass.is-lit { border-color: var(--line); }
-.liquid-glass.is-lit::before { opacity: 1; }
+.liquid-glass.is-lit::before { opacity: 1; will-change: transform; }
 
 .liquid-glass--solid {
   /* Opaque rather than blurred: a backdrop-filter over the live 3D canvas
@@ -449,7 +456,6 @@ details summary::-webkit-details-marker { display: none; }
 /* Lottie instrument inside HUD brackets. */
 .hud-icon {
   position: relative;
-  display: inline-block;
   padding: 3px;
   background:
     linear-gradient(var(--line-strong), var(--line-strong)) 0 0 / 7px 1px no-repeat,

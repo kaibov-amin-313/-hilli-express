@@ -70,7 +70,7 @@ export default function ForecastPage() {
               style={{ borderLeft: '3px solid var(--mid)' }}
             >
               <b>Показан резервный прогноз</b> (экспоненциальное сглаживание Хольта + Open-Meteo).
-              ML-модель сейчас недоступна: {data.fallback_reason}. Она обучается на старте сервера и
+              ML-модель сейчас недоступна: {humanReason(data.fallback_reason)}. Она обучается на старте сервера и
               переобучается каждые 30 минут — обновите страницу через пару минут.
             </div>
           )}
@@ -284,4 +284,14 @@ function Fact({ label, value }: { label: string; value: string }) {
       <dd className="text-gray-200 mt-0.5">{value}</dd>
     </div>
   );
+}
+
+/** Network errors from the server arrive verbatim ("getaddrinfo ENOTFOUND …");
+ *  a visitor should read what happened, not a stack fragment. */
+function humanReason(reason: string | null | undefined): string {
+  if (!reason) return 'причина не указана';
+  if (/ENOTFOUND|EAI_AGAIN|ECONN|ETIMEDOUT|getaddrinfo|fetch failed|socket|network/i.test(reason))
+    return 'нет связи с сервисом погоды Open-Meteo';
+  if (/^[\x00-\x7F]+$/.test(reason) && reason.length > 60) return 'техническая ошибка на сервере';
+  return reason;
 }

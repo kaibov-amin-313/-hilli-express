@@ -65,17 +65,41 @@ export function usePointerSpotlight(): void {
   useEffect(() => {
     if (!window.matchMedia('(hover: hover)').matches) return;
     let current: HTMLElement | null = null;
-    const onMove = (e: PointerEvent) => {
-      const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('.liquid-glass');
-      if (current && current !== el) current.classList.remove('is-lit');
-      current = el ?? null;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      el.style.setProperty('--mx', `${e.clientX - r.left}px`);
-      el.style.setProperty('--my', `${e.clientY - r.top}px`);
-      el.classList.add('is-lit');
+    let rect: DOMRect | null = null;
+    let px = 0;
+    let py = 0;
+    let raf = 0;
+    // Pointer events arrive up to 120+ times a second on a trackpad; the glow
+    // only needs one update per frame, and the panel's box only changes when
+    // the page scrolls or resizes, not on every move.
+    const apply = () => {
+      raf = 0;
+      if (!current) return;
+      rect ??= current.getBoundingClientRect();
+      current.style.setProperty('--mx', `${px - rect.left}px`);
+      current.style.setProperty('--my', `${py - rect.top}px`);
     };
+    const onMove = (e: PointerEvent) => {
+      const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('.liquid-glass') ?? null;
+      if (el !== current) {
+        current?.classList.remove('is-lit');
+        current = el;
+        rect = null;
+        el?.classList.add('is-lit');
+      }
+      px = e.clientX;
+      py = e.clientY;
+      if (el && !raf) raf = requestAnimationFrame(apply);
+    };
+    const invalidate = () => (rect = null);
     window.addEventListener('pointermove', onMove, { passive: true });
-    return () => window.removeEventListener('pointermove', onMove);
+    window.addEventListener('scroll', invalidate, { passive: true });
+    window.addEventListener('resize', invalidate);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('scroll', invalidate);
+      window.removeEventListener('resize', invalidate);
+    };
   }, []);
 }

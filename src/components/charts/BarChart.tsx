@@ -3,6 +3,7 @@
 // bar chart in this app actually wants.
 
 import { linearScale, niceDomain, ticksFor } from './primitives';
+import { chartHeight, useChartWidth } from './useChartWidth';
 
 export interface Bar {
   label: string;
@@ -20,16 +21,17 @@ interface BarChartProps {
   horizontal?: boolean;
 }
 
-const W = 720;
 const PAD = { top: 16, right: 12, bottom: 34, left: 42 };
 
 export default function BarChart({
   bars,
-  height = 220,
+  height: baseHeight = 220,
   unit = '',
   emptyLabel = 'нет данных',
   horizontal = false,
 }: BarChartProps) {
+  const { ref, width: W } = useChartWidth<HTMLDivElement>();
+  const height = chartHeight(baseHeight, W);
   const values = bars.map((b) => b.value).filter((v): v is number => v != null);
   if (values.length === 0) {
     return <p className="text-sm text-muted py-6 text-center">{emptyLabel}</p>;
@@ -47,6 +49,7 @@ export default function BarChart({
   const barW = Math.min(48, slot * 0.62);
 
   return (
+    <div ref={ref}>
     <svg viewBox={`0 0 ${W} ${height}`} className="w-full h-auto" role="img">
       {ticksFor(domain, 4).map((t) => (
         <g key={t}>
@@ -107,6 +110,7 @@ export default function BarChart({
         );
       })}
     </svg>
+    </div>
   );
 }
 

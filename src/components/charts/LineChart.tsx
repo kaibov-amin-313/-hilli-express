@@ -12,6 +12,7 @@ import {
   ticksFor,
   type Pt,
 } from './primitives';
+import { chartHeight, useChartWidth } from './useChartWidth';
 
 export interface Series {
   key: string;
@@ -48,7 +49,6 @@ interface LineChartProps {
   formatValue?: (v: number) => string;
 }
 
-const W = 720;
 const PAD = { top: 16, right: 16, bottom: 30, left: 42 };
 
 export default function LineChart({
@@ -56,12 +56,16 @@ export default function LineChart({
   series,
   band,
   guides = [],
-  height = 260,
+  height: baseHeight = 260,
   unit = '',
   maxXLabels = 6,
   yMin,
   formatValue = (v) => String(Math.round(v)),
 }: LineChartProps) {
+  const { ref, width: W } = useChartWidth<HTMLDivElement>();
+  const height = chartHeight(baseHeight, W);
+  // Fewer x labels when narrow, so they never run into each other.
+  maxXLabels = Math.max(2, Math.min(maxXLabels, Math.floor((W - PAD.left) / 64)));
   const gradientId = useId();
   const [hover, setHover] = useState<number | null>(null);
 
@@ -79,7 +83,7 @@ export default function LineChart({
       x: linearScale([0, Math.max(1, labels.length - 1)], [PAD.left, W - PAD.right]),
       y: linearScale(d, [height - PAD.bottom, PAD.top]),
     };
-  }, [series, band, guides, labels.length, height, yMin]);
+  }, [series, band, guides, labels.length, height, yMin, W]);
 
   const toPoints = (values: Array<number | null>): Pt[] =>
     values
@@ -90,7 +94,7 @@ export default function LineChart({
   const baselineY = height - PAD.bottom;
 
   return (
-    <div className="relative">
+    <div ref={ref} className="relative">
       <svg
         viewBox={`0 0 ${W} ${height}`}
         className="w-full h-auto overflow-visible"
@@ -174,7 +178,10 @@ export default function LineChart({
 
         {/* x labels */}
         {labels.map((label, i) =>
-          i % xLabelStride === 0 || i === labels.length - 1 ? (
+          // The last label always shows, so drop the regular one just before it
+          // when the two would collide.
+          (i % xLabelStride === 0 && !(i !== labels.length - 1 && labels.length - 1 - i < xLabelStride * 0.6)) ||
+          i === labels.length - 1 ? (
             <text
               key={`${label}-${i}`}
               x={x(i)}

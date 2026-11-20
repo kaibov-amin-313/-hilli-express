@@ -273,7 +273,11 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
     // Resolution is the cost here: the terrain shader runs once per pixel. Start
     // modest (contour lines are anti-aliased in the shader, so no MSAA either)
     // and let the governor below step it down on slower GPUs.
-    let quality = Math.min(window.devicePixelRatio, mobile ? 1.25 : 1.5);
+    // On a large laptop screen 1.5× is ~3.3 M pixels per frame, so start inside a
+    // pixel budget; a GPU with headroom climbs back to full sharpness within a
+    // few seconds (see govern), a slow one never pays for it.
+    const budget = Math.sqrt(2.4e6 / Math.max(1, window.innerWidth * window.innerHeight));
+    let quality = Math.min(window.devicePixelRatio, mobile ? 1.25 : 1.5, Math.max(0.75, budget));
     renderer.setPixelRatio(quality);
     renderer.setClearColor(0x000000, 0);
     wrap.insertBefore(renderer.domElement, wrap.firstChild);
@@ -470,6 +474,7 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
     // at a lower resolution (down to 0.6×); if there is headroom, step back up.
     let acc = 0;
     let frames = 0;
+    let steppedDown = false;
     let lastT = performance.now();
     const govern = () => {
       const now = performance.now();
@@ -484,8 +489,10 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
       frames = 0;
       const max = Math.min(window.devicePixelRatio, mobile ? 1.25 : 1.5);
       let next = quality;
-      if (avg > 19) next = Math.max(0.6, quality * 0.8);
-      else if (avg < 13 && quality < max) next = Math.min(max, quality * 1.1);
+      if (avg > 21) {
+        next = Math.max(0.6, quality * 0.85);
+        steppedDown = true;
+      } else if (!steppedDown && avg < 17.5 && quality < max) next = Math.min(max, quality * 1.1);
       if (Math.abs(next - quality) > 0.02) {
         quality = next;
         renderer.setPixelRatio(quality);
@@ -555,10 +562,15 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
     const loop = () => {
       cancelAnimationFrame(raf);
       lastT = performance.now();
-      const tick = () => {
+      let lastDraw = 0;
+      const tick = (now: number = performance.now()) => {
+        if (visible && !reduced) raf = requestAnimationFrame(tick);
+        // 60 fps is the ceiling. A 120 Hz laptop screen would otherwise make
+        // the GPU draw the whole terrain twice as often for motion this slow.
+        if (now - lastDraw < 15) return;
+        lastDraw = now;
         frame();
         govern();
-        if (visible && !reduced) raf = requestAnimationFrame(tick);
       };
       tick();
     };

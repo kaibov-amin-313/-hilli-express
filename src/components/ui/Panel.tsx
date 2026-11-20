@@ -48,7 +48,9 @@ function iconFor(title: ReactNode): LottieName | null {
 /** A Lottie instrument inside HUD corner brackets. */
 export function HudIcon({ name, size = 40, className = '' }: { name: LottieName; size?: number; className?: string }) {
   return (
-    <span className={`hud-icon shrink-0 ${className}`} style={{ width: size, height: size }}>
+    // `inline-block` is a utility, not part of .hud-icon, so a responsive
+    // `hidden md:block` passed in can actually hide it on phones.
+    <span className={`hud-icon inline-block shrink-0 ${className}`} style={{ width: size, height: size }}>
       <Lottie name={name} className="h-full w-full" />
     </span>
   );
@@ -79,10 +81,17 @@ export function Panel({ title, sub, action, icon, children, className = '', id }
                 {title}
               </h2>
             )}
-            {sub && <p className="text-sm text-muted mt-1.5 leading-relaxed max-w-3xl">{sub}</p>}
+            {sub && (
+              <p className={`text-sm text-muted mt-1.5 leading-relaxed max-w-3xl ${action ? 'hidden sm:block' : ''}`}>{sub}</p>
+            )}
           </div>
           {action && <div className="shrink-0">{action}</div>}
         </header>
+      )}
+      {/* On a phone a badge on the right squeezes the subtitle into a narrow
+          column; there it runs full width under the header row instead. */}
+      {sub && action && (
+        <p className="sm:hidden text-sm text-muted -mt-2 mb-5 leading-relaxed">{sub}</p>
       )}
       {children}
     </section>
@@ -107,7 +116,11 @@ export function StatTile({ label, value, unit, hint, color, trend, icon }: StatT
         {icon && <HudIcon name={icon} size={34} />}
       </div>
       <span
-        className="mt-auto font-display text-2xl sm:text-[32px] leading-none tracking-[-0.04em] tabular-nums"
+        // A district name in a half-width tile on a phone doesn't fit at the
+        // numeric size; long words step down instead of being clipped.
+        className={`mt-auto font-display leading-none tracking-[-0.04em] tabular-nums ${
+          typeof value === 'string' && value.length > 7 ? 'text-[clamp(12px,3.7vw,15px)] sm:text-xl md:text-2xl lg:text-[28px]' : 'text-2xl sm:text-[32px]'
+        }`}
         style={color ? { color } : undefined}
       >
         {value}
