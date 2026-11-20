@@ -273,7 +273,7 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
     // Resolution is the cost here: the terrain shader runs once per pixel. Start
     // modest (contour lines are anti-aliased in the shader, so no MSAA either)
     // and let the governor below step it down on slower GPUs.
-    let quality = Math.min(window.devicePixelRatio, mobile ? 1.0 : 1.25);
+    let quality = Math.min(window.devicePixelRatio, mobile ? 1.25 : 1.5);
     renderer.setPixelRatio(quality);
     renderer.setClearColor(0x000000, 0);
     wrap.insertBefore(renderer.domElement, wrap.firstChild);
@@ -482,9 +482,9 @@ export default function AlmatyScene({ stations, pm, color, progress, className =
       const avg = acc / frames;
       acc = 0;
       frames = 0;
-      const max = Math.min(window.devicePixelRatio, mobile ? 1.0 : 1.25);
+      const max = Math.min(window.devicePixelRatio, mobile ? 1.25 : 1.5);
       let next = quality;
-      if (avg > 19) next = Math.max(0.5, quality * 0.8);
+      if (avg > 19) next = Math.max(0.6, quality * 0.8);
       else if (avg < 13 && quality < max) next = Math.min(max, quality * 1.1);
       if (Math.abs(next - quality) > 0.02) {
         quality = next;

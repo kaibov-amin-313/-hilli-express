@@ -24,12 +24,16 @@ export default function Marquee({ children, speed = 40, className = '' }: { chil
       }
     });
     io.observe(track);
+    // Width read once (and on resize), not every frame: reading scrollWidth
+    // inside rAF forced a layout on every frame while the page scrolled.
+    let half = track.scrollWidth / 2;
+    const ro = new ResizeObserver(() => (half = track.scrollWidth / 2));
+    ro.observe(track);
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       const boost = Math.min(6, Math.abs(getLenis()?.velocity ?? 0) * 0.25);
       x -= speed * (1 + boost) * dt;
-      const half = track.scrollWidth / 2;
       if (half > 0 && -x >= half) x += half;
       track.style.transform = `translate3d(${x}px,0,0)`;
       if (running) raf = requestAnimationFrame(tick);
@@ -38,6 +42,7 @@ export default function Marquee({ children, speed = 40, className = '' }: { chil
     return () => {
       cancelAnimationFrame(raf);
       io.disconnect();
+      ro.disconnect();
     };
   }, [speed]);
 

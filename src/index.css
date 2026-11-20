@@ -211,10 +211,22 @@ textarea:focus-visible {
     radial-gradient(60vw 40vh at 75% -10%, color-mix(in srgb, var(--status-c) 16%, transparent), transparent 70%),
     radial-gradient(50vw 50vh at 5% 0%, rgba(120, 140, 170, 0.08), transparent 70%),
     radial-gradient(70vw 50vh at 50% 120%, color-mix(in srgb, var(--status-c) 6%, transparent), transparent 70%);
+  transition: background 1.2s ease;
 }
 
 /* Film grain: SVG turbulence, stepped so it flickers like stock, not a slide. */
-.grain { display: none; }
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  pointer-events: none;
+  opacity: 0.06;
+  /* Pre-rendered tile of the same turbulence, on its own compositor layer:
+     painted once instead of re-filtered on every repaint under it. */
+  background-image: url('/grain.png');
+  transform: translateZ(0);
+  will-change: transform;
+}
 
 /* ── Cursor follower ─────────────────────────────────────────────────────── */
 .cursor-ring {
@@ -230,7 +242,7 @@ textarea:focus-visible {
   pointer-events: none;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  mix-blend-mode: difference;
   transition:
     width 0.45s var(--ease-out-expo), height 0.45s var(--ease-out-expo),
     margin 0.45s var(--ease-out-expo), background 0.3s ease, opacity 0.3s ease,
