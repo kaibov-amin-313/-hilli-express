@@ -43,6 +43,10 @@ export default function SplitText({
           ease: 'expo.out',
           stagger,
           delay,
+          // Once landed, drop the inline transforms: a finished headline is
+          // plain text again, not 40 GPU layers (one per letter) that every
+          // scroll frame has to re-composite.
+          onComplete: () => gsap.set(chars, { clearProps: 'transform' }),
           scrollTrigger: onScroll ? { trigger: el, start: 'top 88%', once: true } : undefined,
         },
       );
@@ -58,7 +62,7 @@ export default function SplitText({
         <span key={wi} className="inline-block whitespace-nowrap" aria-hidden="true">
           {Array.from(word).map((ch, ci) => (
             <span key={ci} className="inline-block overflow-hidden align-bottom pb-[0.08em] -mb-[0.08em]">
-              <span data-ch className="inline-block will-change-transform">
+              <span data-ch className="inline-block">
                 {ch}
               </span>
             </span>

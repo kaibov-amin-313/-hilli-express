@@ -3,7 +3,7 @@
 // briefly speeds it up — the page feels like it has momentum.
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import { getLenis, prefersReducedMotion } from '../../lib/motion';
+import { prefersReducedMotion, scrollVelocity } from '../../lib/motion';
 
 export default function Marquee({ children, speed = 40, className = '' }: { children: ReactNode; speed?: number; className?: string }) {
   const trackRef = useRef<HTMLDivElement>(null);
@@ -32,7 +32,7 @@ export default function Marquee({ children, speed = 40, className = '' }: { chil
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      const boost = Math.min(6, Math.abs(getLenis()?.velocity ?? 0) * 0.25);
+      const boost = Math.min(6, Math.abs(scrollVelocity()) * 0.25);
       x -= speed * (1 + boost) * dt;
       if (half > 0 && -x >= half) x += half;
       track.style.transform = `translate3d(${x}px,0,0)`;

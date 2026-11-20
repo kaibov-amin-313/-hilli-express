@@ -53,15 +53,19 @@ function useScrollState(): { scrolled: boolean; hidden: boolean } {
   const [state, setState] = useState({ scrolled: false, hidden: false });
   useEffect(() => {
     let last = window.scrollY;
+    let cur = { scrolled: false, hidden: false };
+    // Compare here and only touch React when the nav actually changes state —
+    // not on every one of the dozens of scroll events per second.
     const onScroll = () => {
       const y = window.scrollY;
       const goingDown = y > last + 4;
       const goingUp = y < last - 4;
-      setState((s) => {
-        const scrolled = y > 40;
-        const hidden = y > 400 && goingDown ? true : goingUp || y < 400 ? false : s.hidden;
-        return s.scrolled === scrolled && s.hidden === hidden ? s : { scrolled, hidden };
-      });
+      const scrolled = y > 40;
+      const hidden = y > 400 && goingDown ? true : goingUp || y < 400 ? false : cur.hidden;
+      if (scrolled !== cur.scrolled || hidden !== cur.hidden) {
+        cur = { scrolled, hidden };
+        setState(cur);
+      }
       last = y;
     };
     window.addEventListener('scroll', onScroll, { passive: true });

@@ -111,6 +111,11 @@ export default function Lottie({
         // new SVG frame on every display refresh — 120 a second on a ProMotion
         // MacBook, for each icon on screen.
         anim.setSubframe(false);
+        // lottie forces translate3d(0,0,0) on its <svg>, giving every icon its
+        // own GPU layer and pushing whatever overlaps it onto layers too. A
+        // 40 px icon repaints cheaply in place.
+        const svg = el.querySelector('svg');
+        if (svg) svg.style.transform = '';
         if (prefersReducedMotion()) {
           anim.goToAndStop(stillFrame, true);
           return;
