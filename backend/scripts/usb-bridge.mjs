@@ -79,6 +79,21 @@ function setBaud() {
   });
 }
 
+// Если плата замолчала (отошёл кабель, зависла, порт забрал другой процесс),
+// поток часто не закрывается сам — переоткрываем порт после 60 с тишины.
+let lastData = Date.now();
+let current = null;
+setInterval(() => {
+  if (!current || Date.now() - lastData < 60_000) return;
+  console.log(`${t()}  [usb] плата молчит ${Math.round((Date.now() - lastData) / 1000)} с — переподключаю порт`);
+  const s = current;
+  current = null;
+  s.removeAllListeners();
+  s.destroy();
+  lastData = Date.now();
+  setTimeout(open, 1000);
+}, 15_000);
+
 function open() {
   if (!existsSync(port)) {
     console.log(`${t()}  [usb] порт ${port} не найден — плата подключена? Повтор через 5 с`);
@@ -87,11 +102,14 @@ function open() {
   }
   let buf = '';
   const s = createReadStream(port, { encoding: 'utf8', highWaterMark: 256 });
+  current = s;
+  lastData = Date.now();
   s.on('open', () => {
     setBaud();
     console.log(`${t()}  [usb] читаю ${port} (${BAUD} бод)`);
   });
   s.on('data', (chunk) => {
+    lastData = Date.now();
     buf += chunk;
     let i;
     while ((i = buf.indexOf('\n')) >= 0) {
@@ -104,6 +122,8 @@ function open() {
     if (buf.length > 4096) buf = buf.slice(-1024);
   });
   const reopen = (why) => {
+    if (current !== s) return;
+    current = null;
     console.log(`${t()}  [usb] соединение закрыто (${why}), повтор через 5 с`);
     setTimeout(open, 5000);
   };
