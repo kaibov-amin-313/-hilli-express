@@ -170,16 +170,21 @@ function StationDetailView({ id }: { id: string }) {
     let alive = true;
     setData(null);
     setError(false);
-    void api
-      .station(id, hours)
-      .then((d) => {
-        if (alive) setData(d);
-      })
-      .catch(() => {
-        if (alive) setError(true);
-      });
+    const load = (first: boolean) =>
+      void api
+        .station(id, hours)
+        .then((d) => {
+          if (alive) setData(d);
+        })
+        .catch(() => {
+          if (alive && first) setError(true);
+        });
+    load(true);
+    // Станция шлёт пакет раз в 15 с — обновляем экран так же, без мигания.
+    const timer = window.setInterval(() => load(false), 15_000);
     return () => {
       alive = false;
+      window.clearInterval(timer);
     };
   }, [id, hours]);
 
