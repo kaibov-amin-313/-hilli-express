@@ -11,6 +11,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -126,17 +127,29 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     store(PROFILE_KEY, p);
   }, []);
 
+  // Фоновое обновление раз в минуту, чтобы два открытых экрана (телефон и ноутбук)
+  // не расходились из-за того, что один открыт давно. Без мигания «загрузка».
+  useEffect(() => {
+    const id = window.setInterval(() => setReloadToken((t) => t + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const statusKeyRef = useRef('');
   useEffect(() => {
     if (!place) return;
     let alive = true;
-    setStatusLoading(true);
+    const key = `${place.lat},${place.lng},${profile}`;
+    const placeChanged = statusKeyRef.current !== key;
+    statusKeyRef.current = key;
+    if (placeChanged) setStatusLoading(true);
     void api
       .status(place, profile)
       .then((s) => {
         if (alive) setStatus(s);
       })
+      .catch(() => {})
       .finally(() => {
-        if (alive) setStatusLoading(false);
+        if (alive && placeChanged) setStatusLoading(false);
       });
     return () => {
       alive = false;
