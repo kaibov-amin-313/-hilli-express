@@ -38,6 +38,13 @@ export async function computeFullStatus(req: StatusRequest): Promise<FullStatus>
 
   const local = idw(req.point, sources);
 
+  // The headline status must not be driven by simulated (demo) stations: their
+  // synthetic AQI is routinely >200 and would paint the whole city red while
+  // the real PM2.5 anchor says otherwise. Only real hardware can worsen it.
+  const realIds = new Set(devices.filter((d) => d.is_demo !== 1).map((d) => d.id));
+  const realSources = sources.filter((src) => realIds.has(src.device_id));
+  const localReal = realSources.length > 0 ? idw(req.point, realSources) : null;
+
   // Nearest device's raw ppm values — for showing "MQ2/4/8 сейчас" fields.
   const nearestReading = local.nearest ? latestForDevice(local.nearest.device_id) : null;
 
@@ -67,7 +74,7 @@ export async function computeFullStatus(req: StatusRequest): Promise<FullStatus>
     : a?.current.pm2_5 ?? null;
 
   const status = statusFor({
-    aqiComposite: local.value,
+    aqiComposite: effectivePm != null ? (localReal?.value ?? 0) : local.value,
     pm25External: effectivePm,
   });
   if (trafficPenalty > 0 || constructionPenalty > 0) {
